@@ -1,11 +1,11 @@
 "use client";
 
 import {
-  ArrowLeft, ArrowRight, BarChart3, Check, ChevronDown, Clock3, CreditCard,
-  Camera, Leaf, MapPin, Menu, Minus, Package, Phone, Plus, Search, ShoppingBag,
-  Sparkles, Star, Trash2, Truck, Users, WalletCards, X
+  ArrowLeft, ArrowRight, BarChart3, Boxes, Check, ChevronDown, Clock3, CreditCard,
+  Camera, Leaf, LockKeyhole, LogOut, MapPin, Menu, Minus, Package, Phone, Plus, Search, ShoppingBag,
+  ShieldCheck, Sparkles, Star, Trash2, Truck, Users, WalletCards, X
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { CartItem, Category, Product, money, products as seedProducts } from "./data";
 import { useClientPathname } from "../lib/use-client-pathname";
 
@@ -15,6 +15,27 @@ const nav = [
 
 const cx = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(" ");
 
+type AdminUser = { name: string; email: string };
+type InventoryItem = { id: string; name: string; unit: string; quantity: number; minimum: number; emoji: string };
+
+const demoAdmin: AdminUser = { name: "Leonardo Ribeiro", email: "admin@acaira.com" };
+const seedInventory: InventoryItem[] = [
+  { id: "acai", name: "Açaí premium", unit: "kg", quantity: 18.5, minimum: 8, emoji: "🫐" },
+  { id: "banana", name: "Banana prata", unit: "un", quantity: 42, minimum: 25, emoji: "🍌" },
+  { id: "morango", name: "Morango fresco", unit: "kg", quantity: 3.5, minimum: 5, emoji: "🍓" },
+  { id: "granola", name: "Granola artesanal", unit: "kg", quantity: 7.2, minimum: 3, emoji: "🥣" },
+  { id: "copos", name: "Copos 500 ml", unit: "un", quantity: 128, minimum: 60, emoji: "🥤" },
+];
+
+const recipeByProduct: Record<string, Array<[string, number]>> = {
+  "acai-classico": [["acai", .5], ["banana", 1], ["morango", .08], ["granola", .03], ["copos", 1]],
+  "ninho-dream": [["acai", .5], ["morango", .1], ["copos", 1]],
+  "tropical-bowl": [["banana", 1], ["morango", .08], ["copos", 1]],
+  "power-protein": [["acai", .5], ["banana", 1], ["copos", 1]],
+  "smoothie-amazonia": [["acai", .3], ["banana", 1]],
+  "combo-dois-amores": [["acai", 1], ["banana", 2], ["morango", .16], ["granola", .06], ["copos", 2]],
+};
+
 export function Storefront() {
   const pathname = useClientPathname();
   const [products, setProducts] = useState<Product[]>(seedProducts);
@@ -22,10 +43,16 @@ export function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [toast, setToast] = useState("");
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
+  const [inventory, setInventory] = useState<InventoryItem[]>(seedInventory);
 
   useEffect(() => {
     const saved = window.sessionStorage.getItem("acaira-cart");
     if (saved) setCart(JSON.parse(saved));
+    const savedAdmin = window.localStorage.getItem("acaira-demo-admin");
+    const savedInventory = window.localStorage.getItem("acaira-demo-inventory");
+    if (savedAdmin) setAdminUser(JSON.parse(savedAdmin));
+    if (savedInventory) setInventory(JSON.parse(savedInventory));
   }, []);
   useEffect(() => {
     if (!window.location.hostname.endsWith("github.io")) return;
@@ -43,6 +70,9 @@ export function Storefront() {
   useEffect(() => {
     window.sessionStorage.setItem("acaira-cart", JSON.stringify(cart));
   }, [cart]);
+  useEffect(() => {
+    window.localStorage.setItem("acaira-demo-inventory", JSON.stringify(inventory));
+  }, [inventory]);
 
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -71,11 +101,18 @@ export function Storefront() {
   } else if (pathname === "/carrinho") {
     content = <CartPage cart={cart} subtotal={subtotal} changeQty={changeQty} />;
   } else if (pathname === "/checkout") {
-    content = <CheckoutPage cart={cart} subtotal={subtotal} clearCart={() => setCart([])} />;
+    content = <CheckoutPage cart={cart} subtotal={subtotal} clearCart={() => setCart([])} onOrderPaid={() => {
+      setInventory((current) => current.map((item) => {
+        const decrease = cart.reduce((sum, cartItem) => sum + (recipeByProduct[cartItem.id]?.find(([id]) => id === item.id)?.[1] ?? 0) * cartItem.quantity, 0);
+        return { ...item, quantity: Math.max(0, Number((item.quantity - decrease).toFixed(2))) };
+      }));
+    }} />;
   } else if (pathname === "/sobre") content = <AboutPage />;
   else if (pathname === "/contato") content = <ContactPage />;
   else if (pathname.startsWith("/admin")) {
-    content = <AdminPage products={products} setProducts={setProducts} />;
+    content = adminUser
+      ? <AdminPage products={products} setProducts={setProducts} inventory={inventory} setInventory={setInventory} user={adminUser} onLogout={() => { window.localStorage.removeItem("acaira-demo-admin"); setAdminUser(null); }} />
+      : <AdminAccess isRegistration={pathname === "/admin/cadastro"} onAccess={(user) => { window.localStorage.setItem("acaira-demo-admin", JSON.stringify(user)); setAdminUser(user); }} />;
   } else content = <HomePage products={products} addToCart={addToCart} />;
 
   const admin = pathname.startsWith("/admin");
@@ -90,7 +127,6 @@ export function Storefront() {
             </a>
             <nav className={cx("nav", menuOpen && "nav-open")}>
               {nav.map(([href, label]) => <a key={href} href={href} className={pathname === href ? "active" : ""}>{label}</a>)}
-              <a href="/admin">Admin</a>
             </nav>
             <div className="header-actions">
               <button className="icon-button mobile-only" onClick={() => setMenuOpen(!menuOpen)} aria-label="Abrir menu">
@@ -210,13 +246,13 @@ function OrderSummary({ subtotal }: { subtotal: number }) {
   return <aside className="order-summary"><h2>Resumo</h2><label className="coupon"><input placeholder="Cupom de desconto" /><button>Aplicar</button></label><div><span>Subtotal</span><b>{money(subtotal)}</b></div><div><span>Entrega</span><b className={delivery === 0 ? "success" : ""}>{delivery === 0 ? "Grátis" : money(delivery)}</b></div><div className="grand-total"><span>Total</span><strong>{money(subtotal + delivery)}</strong></div><a className="btn btn-primary btn-wide" href="/checkout">Ir para checkout <ArrowRight size={18} /></a><small><Check /> Compra segura e pagamento protegido</small></aside>;
 }
 
-function CheckoutPage({ cart, subtotal, clearCart }: { cart: CartItem[]; subtotal: number; clearCart: () => void }) {
+function CheckoutPage({ cart, subtotal, clearCart, onOrderPaid }: { cart: CartItem[]; subtotal: number; clearCart: () => void; onOrderPaid: () => void }) {
   const [method, setMethod] = useState<"pix" | "card">("pix");
   const [done, setDone] = useState(false);
   const [loading, setLoading] = useState(false);
   function submit(e: FormEvent) {
     e.preventDefault(); setLoading(true);
-    window.setTimeout(() => { setLoading(false); setDone(true); clearCart(); }, 1200);
+    window.setTimeout(() => { onOrderPaid(); setLoading(false); setDone(true); clearCart(); }, 1200);
   }
   if (done) return <div className="success-page"><div className="success-check"><Check /></div><span className="eyebrow">PEDIDO CONFIRMADO</span><h1>Agora é só esperar a delícia chegar.</h1><p>Pedido <b>#AÇR-1048</b> recebido e já enviado para a cozinha. Você receberá atualizações por WhatsApp.</p><div className="order-status"><span className="active"><b>1</b>Confirmado</span><i></i><span><b>2</b>Preparando</span><i></i><span><b>3</b>Saiu</span></div><a className="btn btn-primary" href="/">Voltar para o início</a></div>;
   if (!cart.length) return <div className="page-wrap cart-empty-page"><EmptyCart /><a className="btn btn-primary" href="/cardapio">Escolher meu açaí</a></div>;
@@ -245,12 +281,30 @@ const seedOrders: AdminOrder[] = [
   { id: "#1045", customer: "Pedro Lima", items: 2, total: 54.9, status: "Entregue", time: "11:56" },
 ];
 
-function AdminPage({ products, setProducts }: { products: Product[]; setProducts: (p: Product[]) => void }) {
+function AdminAccess({ isRegistration, onAccess }: { isRegistration: boolean; onAccess: (user: AdminUser) => void }) {
+  const [error, setError] = useState("");
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const name = String(data.get("name") || demoAdmin.name).trim();
+    const email = String(data.get("email") || "").trim().toLowerCase();
+    const password = String(data.get("password") || "");
+    if (!isRegistration && !((email === demoAdmin.email && password === "acaira2026") || window.localStorage.getItem(`acaira-demo-admin:${email}`) === password)) {
+      setError("E-mail ou senha inválidos. Para a demonstração, use admin@acaira.com e acaira2026.");
+      return;
+    }
+    if (isRegistration) window.localStorage.setItem(`acaira-demo-admin:${email}`, password);
+    onAccess({ name: isRegistration ? name : (email === demoAdmin.email ? demoAdmin.name : email.split("@")[0]), email });
+  }
+  return <div className="admin-access"><section className="access-card"><a href="/" className="brand"><span className="brand-mark">A</span><span>AÇAÍRA<small>PAINEL ADMIN</small></span></a><span className="eyebrow"><ShieldCheck size={14} /> ACESSO RESTRITO</span><h1>{isRegistration ? "Crie o acesso da loja." : "Bem-vindo de volta."}</h1><p>{isRegistration ? "Cadastre o administrador que controlará produtos, pedidos e estoque." : "Entre para gerenciar pedidos, cardápio e ingredientes."}</p><form onSubmit={submit}>{isRegistration && <label>Nome completo<input name="name" required placeholder="Nome do responsável" /></label>}<label>E-mail<input name="email" type="email" required placeholder="admin@sualoja.com" defaultValue={isRegistration ? "" : demoAdmin.email} /></label><label>Senha<input name="password" type="password" required placeholder="Sua senha" /></label>{error && <div className="access-error">{error}</div>}<button className="btn btn-primary btn-wide"><LockKeyhole size={17} /> {isRegistration ? "Criar acesso administrativo" : "Entrar no painel"}</button></form>{!isRegistration ? <><div className="demo-credentials"><b>Acesso demonstrativo</b><span>admin@acaira.com</span><span>Senha: acaira2026</span></div><p className="access-switch">Ainda não tem acesso? <a href="/admin/cadastro">Cadastrar administrador</a></p></> : <p className="access-switch">Já possui cadastro? <a href="/admin">Entrar no painel</a></p>}<a className="back-store" href="/"><ArrowLeft size={15} /> Voltar para a loja</a></section></div>;
+}
+
+function AdminPage({ products, setProducts, inventory, setInventory, user, onLogout }: { products: Product[]; setProducts: (p: Product[]) => void; inventory: InventoryItem[]; setInventory: (items: InventoryItem[]) => void; user: AdminUser; onLogout: () => void }) {
   const pathname = useClientPathname();
   const [orders, setOrders] = useState(seedOrders);
   const [modal, setModal] = useState<null | Partial<Product>>(null);
-  const section = pathname.includes("/produtos") ? "products" : pathname.includes("/pedidos") ? "orders" : "dashboard";
-  const navItems = [{ href: "/admin", label: "Visão geral", icon: BarChart3 }, { href: "/admin/pedidos", label: "Pedidos", icon: Package }, { href: "/admin/produtos", label: "Produtos", icon: ShoppingBag }];
+  const section = pathname.includes("/produtos") ? "products" : pathname.includes("/pedidos") ? "orders" : pathname.includes("/estoque") ? "inventory" : "dashboard";
+  const navItems = [{ href: "/admin", label: "Visão geral", icon: BarChart3 }, { href: "/admin/pedidos", label: "Pedidos", icon: Package }, { href: "/admin/produtos", label: "Produtos", icon: ShoppingBag }, { href: "/admin/estoque", label: "Estoque", icon: Boxes }];
   function saveProduct(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); const fd = new FormData(e.currentTarget);
     const item: Product = {
@@ -261,15 +315,23 @@ function AdminPage({ products, setProducts }: { products: Product[]; setProducts
     };
     setProducts(modal?.id ? products.map((p) => p.id === modal.id ? item : p) : [...products, item]); setModal(null);
   }
-  return <div className="admin-shell"><aside className="admin-sidebar"><a href="/" className="brand admin-brand"><span className="brand-mark">A</span><span>AÇAÍRA<small>PAINEL ADMIN</small></span></a><nav>{navItems.map((item) => <a href={item.href} className={(section === "dashboard" ? pathname === "/admin" : pathname.includes(item.href)) ? "active" : ""} key={item.href}><item.icon size={19} /> {item.label}{item.label === "Pedidos" && <b>3</b>}</a>)}</nav><div className="admin-help"><Sparkles /><b>Precisa de ajuda?</b><small>Fale com nosso suporte.</small><button>Chamar suporte</button></div><a className="admin-exit" href="/"><ArrowLeft /> Voltar para a loja</a></aside><main className="admin-main"><header className="admin-top"><div><small>Terça-feira, 29 de julho</small><h1>{section === "dashboard" ? "Olá, Leonardo 👋" : section === "products" ? "Produtos" : "Pedidos"}</h1></div><div className="admin-user"><span>LR</span><b>Leonardo<small>Administrador</small></b><ChevronDown /></div></header>
-    {section === "dashboard" && <Dashboard orders={orders} />}
+  return <div className="admin-shell"><aside className="admin-sidebar"><a href="/" className="brand admin-brand"><span className="brand-mark">A</span><span>AÇAÍRA<small>PAINEL ADMIN</small></span></a><nav>{navItems.map((item) => <a href={item.href} className={(section === "dashboard" ? pathname === "/admin" : pathname.includes(item.href)) ? "active" : ""} key={item.href}><item.icon size={19} /> {item.label}{item.label === "Pedidos" && <b>3</b>}</a>)}</nav><div className="admin-help"><Sparkles /><b>Dados de demonstração</b><small>O Supabase assume na produção.</small></div><button className="admin-exit" onClick={onLogout}><LogOut /> Sair do painel</button><a className="admin-exit" href="/"><ArrowLeft /> Voltar para a loja</a></aside><main className="admin-main"><header className="admin-top"><div><small>Terça-feira, 29 de julho</small><h1>{section === "dashboard" ? `Olá, ${user.name.split(" ")[0]} 👋` : section === "products" ? "Produtos" : section === "inventory" ? "Estoque" : "Pedidos"}</h1></div><div className="admin-user"><span>{user.name.slice(0, 2).toUpperCase()}</span><b>{user.name}<small>Administrador</small></b><ChevronDown /></div></header>
+    {section === "dashboard" && <Dashboard orders={orders} inventory={inventory} />}
     {section === "orders" && <OrdersTable orders={orders} setOrders={setOrders} />}
     {section === "products" && <ProductsAdmin products={products} setProducts={setProducts} openModal={setModal} />}
+    {section === "inventory" && <InventoryPanel inventory={inventory} setInventory={setInventory} />}
   </main>{modal && <div className="modal-backdrop"><form className="product-modal" onSubmit={saveProduct}><div className="modal-head"><div><small>CATÁLOGO</small><h2>{modal.id ? "Editar produto" : "Novo produto"}</h2></div><button type="button" onClick={() => setModal(null)}><X /></button></div><label>Nome<input name="name" defaultValue={modal.name} required /></label><div className="field-grid"><label>Categoria<select name="category" defaultValue={modal.category || "Açaí"}><option>Açaí</option><option>Bowls</option><option>Bebidas</option><option>Combos</option></select></label><label>Preço<input name="price" type="number" step="0.01" defaultValue={modal.price} required /></label></div><label>Descrição<textarea name="description" rows={3} defaultValue={modal.description} required /></label><label>URL da imagem<input name="image" defaultValue={modal.image} placeholder="https://..." /></label><label>Selo opcional<input name="badge" defaultValue={modal.badge} placeholder="Ex: Mais pedido" /></label><div className="modal-actions"><button type="button" className="btn btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button className="btn btn-primary">Salvar produto</button></div></form></div>}</div>;
 }
 
-function Dashboard({ orders }: { orders: AdminOrder[] }) {
-  return <><div className="admin-kpis"><div><span className="kpi-icon purple"><WalletCards /></span><small>VENDAS HOJE</small><strong>R$ 2.847,90</strong><em>↗ 12,5% <i>vs. ontem</i></em></div><div><span className="kpi-icon lime"><Package /></span><small>PEDIDOS</small><strong>48</strong><em>↗ 8,2% <i>vs. ontem</i></em></div><div><span className="kpi-icon orange"><Clock3 /></span><small>TICKET MÉDIO</small><strong>R$ 59,33</strong><em>↗ 3,1% <i>vs. ontem</i></em></div><div><span className="kpi-icon blue"><Users /></span><small>NOVOS CLIENTES</small><strong>16</strong><em>↗ 14,3% <i>esta semana</i></em></div></div><div className="admin-grid"><section className="chart-card"><div className="card-head"><div><h2>Visão de vendas</h2><p>Faturamento dos últimos 7 dias</p></div><button>Últimos 7 dias <ChevronDown /></button></div><div className="chart"><div className="chart-y"><span>3k</span><span>2k</span><span>1k</span><span>0</span></div><div className="bars">{[48, 63, 45, 78, 66, 91, 74].map((height, i) => <div key={i}><span style={{ height: `${height}%` }}></span><small>{["Qua", "Qui", "Sex", "Sáb", "Dom", "Seg", "Ter"][i]}</small></div>)}</div></div></section><section className="status-card"><div className="card-head"><div><h2>Pedidos por status</h2><p>Atualização em tempo real</p></div></div>{[["Novos", 8, "purple"], ["Preparando", 12, "orange"], ["Em entrega", 6, "blue"], ["Concluídos", 22, "green"]].map(([name, count, color]) => <div className="status-row" key={String(name)}><span><i className={String(color)}></i>{name}</span><b>{count}</b><div><i className={String(color)} style={{ width: `${Number(count) * 4}%` }}></i></div></div>)}</section></div><section className="table-card"><div className="card-head"><div><h2>Pedidos recentes</h2><p>Acompanhe os pedidos em andamento</p></div><a href="/admin/pedidos">Ver todos <ArrowRight /></a></div><OrdersTable orders={orders} compact /></section></>;
+function Dashboard({ orders, inventory }: { orders: AdminOrder[]; inventory: InventoryItem[] }) {
+  const lowStock = inventory.filter(item => item.quantity <= item.minimum);
+  return <><section className="inventory-glance"><div><span className="eyebrow">CONTROLE OPERACIONAL</span><h3>{lowStock.length ? `${lowStock.length} item(ns) precisam de reposição` : "Estoque em níveis saudáveis"}</h3><p>Pedidos simulados baixam os ingredientes automaticamente nesta demonstração.</p></div><a className="btn btn-wine" href="/admin/estoque"><Boxes /> Abrir estoque</a></section><div className="admin-kpis"><div><span className="kpi-icon purple"><WalletCards /></span><small>VENDAS HOJE</small><strong>R$ 2.847,90</strong><em>↗ 12,5% <i>vs. ontem</i></em></div><div><span className="kpi-icon lime"><Package /></span><small>PEDIDOS</small><strong>48</strong><em>↗ 8,2% <i>vs. ontem</i></em></div><div><span className="kpi-icon orange"><Clock3 /></span><small>TICKET MÉDIO</small><strong>R$ 59,33</strong><em>↗ 3,1% <i>vs. ontem</i></em></div><div><span className="kpi-icon blue"><Users /></span><small>NOVOS CLIENTES</small><strong>16</strong><em>↗ 14,3% <i>esta semana</i></em></div></div><div className="admin-grid"><section className="chart-card"><div className="card-head"><div><h2>Visão de vendas</h2><p>Faturamento dos últimos 7 dias</p></div><button>Últimos 7 dias <ChevronDown /></button></div><div className="chart"><div className="chart-y"><span>3k</span><span>2k</span><span>1k</span><span>0</span></div><div className="bars">{[48, 63, 45, 78, 66, 91, 74].map((height, i) => <div key={i}><span style={{ height: `${height}%` }}></span><small>{["Qua", "Qui", "Sex", "Sáb", "Dom", "Seg", "Ter"][i]}</small></div>)}</div></div></section><section className="status-card"><div className="card-head"><div><h2>Pedidos por status</h2><p>Atualização em tempo real</p></div></div>{[["Novos", 8, "purple"], ["Preparando", 12, "orange"], ["Em entrega", 6, "blue"], ["Concluídos", 22, "green"]].map(([name, count, color]) => <div className="status-row" key={String(name)}><span><i className={String(color)}></i>{name}</span><b>{count}</b><div><i className={String(color)} style={{ width: `${Number(count) * 4}%` }}></i></div></div>)}</section></div><section className="table-card"><div className="card-head"><div><h2>Pedidos recentes</h2><p>Acompanhe os pedidos em andamento</p></div><a href="/admin/pedidos">Ver todos <ArrowRight /></a></div><OrdersTable orders={orders} compact /></section></>;
+}
+
+function InventoryPanel({ inventory, setInventory }: { inventory: InventoryItem[]; setInventory: (items: InventoryItem[]) => void }) {
+  const lowStock = inventory.filter(item => item.quantity <= item.minimum);
+  const changeStock = (id: string, delta: number) => setInventory(inventory.map(item => item.id === id ? { ...item, quantity: Math.max(0, Number((item.quantity + delta).toFixed(2))) } : item));
+  return <section><div className="inventory-hero"><div><span className="eyebrow">INGREDIENTES E INSUMOS</span><h2>Controle de estoque</h2><p>Registre entradas e saídas. Os alertas mostram o que precisa ser comprado antes de faltar.</p></div><div className={cx("stock-chip", lowStock.length && "alert")}>{lowStock.length ? <><ShieldCheck /> {lowStock.length} alerta(s) de reposição</> : <><Check /> Estoque saudável</>}</div></div>{lowStock.length > 0 && <div className="stock-alert"><Boxes /><span><b>Atenção à reposição:</b> {lowStock.map(item => item.name).join(", ")}.</span></div>}<div className="stock-grid">{inventory.map(item => { const isLow = item.quantity <= item.minimum; const increment = item.unit === "kg" ? .5 : 1; const meter = Math.min(100, (item.quantity / Math.max(item.minimum * 2, 1)) * 100); return <article className={cx("stock-card", isLow && "low")} key={item.id}><div className="stock-card-head"><span className="stock-emoji">{item.emoji}</span><div><small>INSUMO</small><h3>{item.name}</h3></div><i>{isLow ? "Repor" : "OK"}</i></div><div className="stock-amount"><strong>{item.quantity.toLocaleString("pt-BR", { minimumFractionDigits: item.unit === "kg" ? 1 : 0, maximumFractionDigits: 1 })} <small>{item.unit}</small></strong><span>Mínimo: {item.minimum} {item.unit}</span></div><div className="stock-meter"><i style={{ width: `${meter}%` }} /></div><div className="stock-actions"><button type="button" onClick={() => changeStock(item.id, -increment)}><Minus /> Saída</button><button type="button" onClick={() => changeStock(item.id, increment)}><Plus /> Entrada</button></div></article>})}</div><p className="inventory-note">Dados de demonstração salvos neste navegador. Na produção, as movimentações ficam registradas no Supabase por usuário e pedido.</p></section>
 }
 
 function OrdersTable({ orders, setOrders, compact }: { orders: AdminOrder[]; setOrders?: (o: AdminOrder[]) => void; compact?: boolean }) {
