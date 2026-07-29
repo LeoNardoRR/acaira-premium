@@ -5,9 +5,9 @@ import {
   Camera, Leaf, MapPin, Menu, Minus, Package, Phone, Plus, Search, ShoppingBag,
   Sparkles, Star, Trash2, Truck, Users, WalletCards, X
 } from "lucide-react";
-import { usePathname } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { CartItem, Category, Product, money, products as seedProducts } from "./data";
+import { useClientPathname } from "../lib/use-client-pathname";
 
 const nav = [
   ["/", "Home"], ["/cardapio", "Cardápio"], ["/sobre", "Sobre"], ["/contato", "Contato"],
@@ -16,7 +16,7 @@ const nav = [
 const cx = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(" ");
 
 export function Storefront() {
-  const pathname = usePathname() || "/";
+  const pathname = useClientPathname();
   const [products, setProducts] = useState<Product[]>(seedProducts);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -26,6 +26,19 @@ export function Storefront() {
   useEffect(() => {
     const saved = window.sessionStorage.getItem("acaira-cart");
     if (saved) setCart(JSON.parse(saved));
+  }, []);
+  useEffect(() => {
+    if (!window.location.hostname.endsWith("github.io")) return;
+    const navigate = (event: MouseEvent) => {
+      const anchor = (event.target as HTMLElement).closest("a");
+      const href = anchor?.getAttribute("href");
+      if (!href?.startsWith("/") || anchor?.target === "_blank") return;
+      event.preventDefault();
+      window.location.hash = href === "/" ? "/" : href;
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    document.addEventListener("click", navigate);
+    return () => document.removeEventListener("click", navigate);
   }, []);
   useEffect(() => {
     window.sessionStorage.setItem("acaira-cart", JSON.stringify(cart));
@@ -233,7 +246,7 @@ const seedOrders: AdminOrder[] = [
 ];
 
 function AdminPage({ products, setProducts }: { products: Product[]; setProducts: (p: Product[]) => void }) {
-  const pathname = usePathname();
+  const pathname = useClientPathname();
   const [orders, setOrders] = useState(seedOrders);
   const [modal, setModal] = useState<null | Partial<Product>>(null);
   const section = pathname.includes("/produtos") ? "products" : pathname.includes("/pedidos") ? "orders" : "dashboard";
